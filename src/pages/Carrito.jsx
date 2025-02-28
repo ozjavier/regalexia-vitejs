@@ -10,8 +10,43 @@ const Carrito = () => {
         return [...productos, ...reservas];
     });
 
-    const redirectToCheckoutPage = () => {
-        navigate('/checkout', { state: { cart } });
+    const redirectToCheckoutPage = async () => {
+        const orderId = await createOrderInWooCommerce();
+        if (!orderId) return alert("Error al generar el pedido en WooCommerce");
+    
+        const totalAmount = Math.round(cart.reduce((total, p) => total + p.price * p.quantity, 0) * 100);
+        
+        navigate("/checkout", { state: { cart, totalAmount, orderId } });
+    };
+    
+    const createOrderInWooCommerce = async () => {
+        const orderData = {
+            payment_method: "redsys",
+            payment_method_title: "Redsys",
+            set_paid: false,
+            line_items: cart.map(product => ({
+                product_id: product.id,
+                quantity: product.quantity,
+            })),
+        };
+    
+        try {
+            const response = await fetch(`${import.meta.env.VITE_WOO_WORDPRESS_API_URL}/orders`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": "Basic " + btoa(`${import.meta.env.VITE_WC_CONSUMER_KEY}:${import.meta.env.VITE_WC_CONSUMER_SECRET}`),
+                },
+                body: JSON.stringify(orderData),
+            });
+    
+            if (!response.ok) throw new Error("Error al crear el pedido");
+            const order = await response.json();
+            return order.id; // Retorna el ID del pedido
+        } catch (error) {
+            console.error("Error al crear el pedido en WooCommerce:", error);
+            return null;
+        }
     };
 
     const handleDelete = (id) => {
