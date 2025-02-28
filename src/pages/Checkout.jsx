@@ -1,94 +1,84 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import React from 'react'
+import CryptoJS from "crypto-js";
+import { useLocation } from "react-router-dom";
 
-const Checkout = () => {
+export default function Checkout() {
     const location = useLocation();
-    const { orderId } = location.state || {};
-    const [idOper, setIdOper] = useState('');
-    const scriptLoaded = useRef(false); // Ref para controlar la carga del script
+    const totalAmount = location.state?.totalAmount || 0; // Asegurar que no sea undefined
+    const orderId = location.state?.orderId || "000000"; // Si no hay ID, asignar un valor por defecto
 
-    useEffect(() => {
-        if (scriptLoaded.current) return; // Evita la carga doble del script
+    function createMerchantParameters(params) {
+        let merchantParameters = CryptoJS.enc.Utf8.parse(JSON.stringify(params));
+        let merchantBase64 = merchantParameters.toString(CryptoJS.enc.Base64);
+        return merchantBase64;
+    }    
 
-        // Cargar el script de Redsys dinámicamente
-        const script = document.createElement('script');
-        script.src = "https://sis-t.redsys.es:25443/sis/NC/sandbox/redsysV3.js";
-        script.async = true;
-        document.body.appendChild(script);
-        scriptLoaded.current = true; // Marcar el script como cargado
+    const formatOrderId = (orderId) => {
+      let orderString = orderId.toString(); // Convertir a string si es numérico
+      return orderString.padStart(12, "0").slice(0, 12); // Asegurar 12 caracteres exactos
+    };
+  
 
-        script.onload = () => {
-            console.log("✅ Redsys script cargado correctamente.");
+    function createMerchatSignature(params, merchantBase64) {
+        const claveComercio = "sq7HjrUOBfKmC576ILgskD5srU870gJ7";
+    
+        // Decode key
+        let decodeKey = CryptoJS.enc.Base64.parse(claveComercio);
+    
+        // Generate transaction key
+        let iv = CryptoJS.enc.Hex.parse("0000000000000000");
+        let cipher = CryptoJS.TripleDES.encrypt(
+          params.DS_MERCHANT_ORDER,
+          decodeKey,
+          {
+            iv: iv,
+            mode: CryptoJS.mode.CBC,
+            padding: CryptoJS.pad.ZeroPadding,
+          }
+        );
+    
+        // Sign
+        let signature = CryptoJS.HmacSHA256(merchantBase64, cipher.ciphertext);
+        let signatureBase64 = signature.toString(CryptoJS.enc.Base64);
+    
+        return signatureBase64;
+    }
 
-            // Inicializar el formulario de Redsys con estilos personalizados
-            getInSiteForm(
-                "card-form",
-                "background-color: #0074D9; color: white; font-weight: bold;", 
-                "background-color: #F8F9FA;",  
-                "background-color: #E9ECEF; border-radius: 8px;",  
-                "font-family: Arial, sans-serif; color: #333;", 
-                "Pagar con Redsys",   
-                "999008881",          
-                "1",                  
-                `pedido${Math.floor((Math.random() * 1000) + 1)}`, 
-                "ES",                 
-                false                 
-            );
-        };
+    let data = {
+        DS_MERCHANT_AMOUNT: totalAmount.toString(),
+        DS_MERCHANT_CURRENCY: "978",
+        DS_MERCHANT_MERCHANTCODE: "999008881",
+        DS_MERCHANT_MERCHANTURL: "http://www.prueba.com/urlNotificacion",
+        DS_MERCHANT_ORDER: formatOrderId(orderId),
+        DS_MERCHANT_TERMINAL: "1",
+        DS_MERCHANT_TRANSACTIONTYPE: "0",
+        DS_MERCHANT_URLKO: "http://www.prueba.com/urlKO",
+        DS_MERCHANT_URLOK: "http://www.prueba.com/urlOK",
+    };    
 
-        return () => {
-            document.body.removeChild(script);
-        };
-    }, []);
-
-    useEffect(() => {
-        const handlePaymentMessage = (event) => {
-            const trustedOrigins = [
-                "http://localhost:3000",
-                "https://sis-t.redsys.es:25443"
-            ];
-
-            if (!trustedOrigins.includes(event.origin)) {
-                console.warn("Mensaje recibido de un origen no válido:", event.origin);
-                return;
-            }
-
-            storeIdOper(event, "token", "errorCode", () => {
-                alert("Validaciones personalizadas antes del pago.");
-                return true;
-            });
-
-            const tokenElement = document.getElementById("token");
-            if (tokenElement) {
-                setIdOper(tokenElement.value);
-            }
-        };
-
-        window.addEventListener("message", handlePaymentMessage);
-        return () => {
-            window.removeEventListener("message", handlePaymentMessage);
-        };
-    }, []);
+    let dsmerchantParameters = createMerchantParameters(data);
+    let dsSignature = createMerchatSignature(data, dsmerchantParameters);  
+    let dsSignatureVersion = "HMAC_SHA256_V1";
+    
 
     return (
-        <div className="container mx-auto p-6">
-            <h1 className="text-rgx-blue text-[42px] font-semibold mb-8 font-montserrat">Pago Seguro con Redsys</h1>
-            
-            <div id="card-form" className="bg-white p-6 shadow-md rounded-lg text-center"></div>
-
-            <form name="datos">
-                <input type="hidden" id="token" value={idOper} />
-                <input type="hidden" id="errorCode" />
-                <button 
-                    type="button"
-                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
-                    onClick={() => alert(`ID Operación: ${idOper}`)}
-                >
-                    Ver ID Operación
-                </button>
-            </form>
-        </div>
-    );
-};
-
-export default Checkout;
+        <form
+          name="formularioPago"
+          method="POST"
+          action="https://sis-t.redsys.es:25443/sis/realizarPago"
+        >
+          <input
+            type="hidden"
+            name="DS_MERCHANTPARAMETERS"
+            value={dsmerchantParameters}
+          />
+          <input type="hidden" name="DS_SIGNATURE" value={dsSignature} />
+          <input
+            type="hidden"
+            name="DS_SIGNATUREVERSION"
+            value={dsSignatureVersion}
+          />
+          <input type="submit" value="REALIZAR PAGO" />
+        </form>
+    )
+}
