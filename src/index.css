@@ -11,4 +11,14 @@
     --color-rgx-text: #444444;    
     --font-nunito: "Nunito", "serif";
     --font-montserrat: "Montserrat", "serif";
+    --font-scribble: "scribble-scrawl", "sans-serif";
+}
+
+@font-face {
+    font-family: 'scribble-scrawl';
+    src: url('/src/fonts/scribble-scrawl.woff') format('woff');
+    font-weight: 500;
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
 }
